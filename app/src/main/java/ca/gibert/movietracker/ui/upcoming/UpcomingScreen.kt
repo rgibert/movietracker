@@ -73,6 +73,7 @@ import ca.gibert.movietracker.ui.theme.GlassSurface
 import ca.gibert.movietracker.ui.theme.LocalZenColors
 import ca.gibert.movietracker.ui.watch.WatchlistEvent
 import ca.gibert.movietracker.ui.watch.WatchlistViewModel
+import ca.gibert.movietracker.util.formatDate
 import ca.gibert.movietracker.util.formatMonth
 import ca.gibert.movietracker.util.formatRelativeDay
 import ca.gibert.movietracker.util.monthCalendarDays
@@ -120,9 +121,10 @@ fun UpcomingScreen(
     val comingUp = remember(state.items, state.serviceOverrides, today) {
         buildComingUp(state.items, state.serviceOverrides, today)
     }
-    val grouped = remember(comingUp) {
-        comingUp.dated.groupBy { it.event.date }.toSortedMap()
-    }
+    // The list shows each movie once, under its next release; the calendar marks
+    // every day a movie has a release on.
+    val listGroups = remember(comingUp) { comingUp.byNextRelease() }
+    val grouped = remember(comingUp) { comingUp.byReleaseDate() }
     val isEmpty = comingUp.dated.isEmpty() && comingUp.undated.isEmpty()
 
     var viewMode by rememberSaveable { mutableStateOf(UpcomingViewMode.List) }
@@ -236,16 +238,17 @@ fun UpcomingScreen(
 
                         when (viewMode) {
                             UpcomingViewMode.List -> {
-                                grouped.forEach { (date, entries) ->
+                                listGroups.forEach { (date, entries) ->
                                     item(key = "day_$date") {
                                         DayHeader(date = date, count = entries.size)
                                     }
                                     items(
                                         items = entries,
-                                        key = { "release_${it.movie.ids.trakt}_${it.event.kind}_$date" },
+                                        key = { "release_${it.movie.ids.trakt}_$date" },
                                     ) { item ->
                                         ReleaseRow(
                                             item = item,
+                                            day = date,
                                             service = featuredService(
                                                 item.movie.ids.trakt,
                                                 item.entry.providers,
@@ -304,10 +307,11 @@ fun UpcomingScreen(
                                 } else {
                                     items(
                                         items = selectedEntries,
-                                        key = { "selected_${it.movie.ids.trakt}_${it.event.kind}" },
+                                        key = { "selected_${it.movie.ids.trakt}" },
                                     ) { item ->
                                         ReleaseRow(
                                             item = item,
+                                            day = selectedDate,
                                             service = featuredService(
                                                 item.movie.ids.trakt,
                                                 item.entry.providers,
@@ -605,7 +609,7 @@ private fun DayHeader(date: LocalDate, count: Int) {
             )
         }
         if (count > 0) {
-            Pill(text = "$count ${if (count == 1) "release" else "releases"}")
+            Pill(text = "$count ${if (count == 1) "movie" else "movies"}")
         }
     }
 }
@@ -630,14 +634,21 @@ private fun UndatedHeader(count: Int) {
     }
 }
 
+/**
+ * One movie with all of its upcoming releases. The releases on [day], the day
+ * the row is listed under, lead; releases on other days follow with their dates.
+ */
 @Composable
 private fun ReleaseRow(
     item: ComingUpItem,
+    day: LocalDate,
     service: String?,
     onClick: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    val relative = relativeDaysLabel(item.event.date)
+    val (onDay, otherDays) = item.events.partition { it.date == day }
+    val headline = onDay.firstOrNull() ?: item.next
+    val relative = relativeDaysLabel(headline.date)
 
     GlassSurface(
         modifier = Modifier.fillMaxWidth(),
@@ -666,11 +677,20 @@ private fun ReleaseRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(3.dp))
-                Text(
-                    text = releaseDescription(item.event.kind),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.onSurfaceVariant,
-                )
+                onDay.forEach { event ->
+                    Text(
+                        text = releaseDescription(event.kind),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant,
+                    )
+                }
+                otherDays.forEach { event ->
+                    Text(
+                        text = "${event.kind.label} · ${formatDate(event.date)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant.copy(alpha = 0.7f),
+                    )
+                }
                 if (service != null) {
                     Spacer(Modifier.height(8.dp))
                     ServiceLine(network = service)
@@ -679,7 +699,7 @@ private fun ReleaseRow(
 
             Spacer(Modifier.width(8.dp))
 
-            Pill(text = relative ?: item.event.kind.label, emphasis = true)
+            Pill(text = relative ?: headline.kind.label, emphasis = true)
         }
     }
 }
