@@ -14,11 +14,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Sort
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.BookmarkRemove
 import androidx.compose.material.icons.outlined.Movie
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -30,7 +35,9 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,7 +51,9 @@ import ca.gibert.movietracker.data.Availability
 import ca.gibert.movietracker.data.Movie
 import ca.gibert.movietracker.data.ProviderType
 import ca.gibert.movietracker.data.ToWatchItem
+import ca.gibert.movietracker.data.WatchlistSort
 import ca.gibert.movietracker.data.buildToWatch
+import ca.gibert.movietracker.data.sortedFor
 import ca.gibert.movietracker.ui.components.CachedBanner
 import ca.gibert.movietracker.ui.components.EmptyState
 import ca.gibert.movietracker.ui.components.ErrorState
@@ -93,12 +102,12 @@ fun WatchScreen(
     }
 
     val today = remember { LocalDate.now() }
-    val items = remember(state.items, state.serviceOverrides, state.removedIds, today) {
+    val items = remember(state.items, state.serviceOverrides, state.removedIds, state.sort, today) {
         buildToWatch(
             items = state.items.filter { it.movie.ids.trakt !in state.removedIds },
             overrides = state.serviceOverrides,
             today = today,
-        )
+        ).sortedFor(state.sort)
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -150,7 +159,9 @@ fun WatchScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         item(key = "header") {
-                            ScreenHeader(eyebrow = "Your watchlist", title = "To Watch")
+                            ScreenHeader(eyebrow = "Your watchlist", title = "To Watch") {
+                                SortButton(selected = state.sort, onSelect = viewModel::setSort)
+                            }
                         }
 
                         if (state.showingCached) {
@@ -273,6 +284,60 @@ private fun ToWatchCard(
                         modifier = Modifier.size(20.dp),
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SortButton(
+    selected: WatchlistSort,
+    onSelect: (WatchlistSort) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val colors = MaterialTheme.colorScheme
+
+    Box {
+        GlassSurface(
+            shape = CircleShape,
+            onClick = { expanded = true },
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Outlined.Sort,
+                    contentDescription = null,
+                    tint = colors.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    text = selected.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = colors.onSurface,
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            WatchlistSort.entries.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.label) },
+                    onClick = {
+                        expanded = false
+                        onSelect(option)
+                    },
+                    trailingIcon = if (option == selected) {
+                        { Icon(Icons.Outlined.Check, contentDescription = "Selected") }
+                    } else {
+                        null
+                    },
+                )
             }
         }
     }

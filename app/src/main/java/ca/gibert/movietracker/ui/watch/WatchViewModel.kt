@@ -10,6 +10,8 @@ import ca.gibert.movietracker.data.Movie
 import ca.gibert.movietracker.data.ServiceOverrideStore
 import ca.gibert.movietracker.data.TraktRepository
 import ca.gibert.movietracker.data.WatchlistMovie
+import ca.gibert.movietracker.data.WatchlistSort
+import ca.gibert.movietracker.data.WatchlistSortStore
 import ca.gibert.movietracker.util.friendlyError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -39,6 +41,8 @@ data class WatchlistUiState(
     val removedIds: Set<Int> = emptySet(),
     val hasProviderData: Boolean = false,
     val region: String = "",
+    /** Order of the To Watch list. */
+    val sort: WatchlistSort = WatchlistSort.DEFAULT,
 )
 
 sealed interface WatchlistEvent {
@@ -49,6 +53,7 @@ sealed interface WatchlistEvent {
 class WatchlistViewModel(
     private val repository: TraktRepository,
     private val serviceOverrides: ServiceOverrideStore,
+    private val sortStore: WatchlistSortStore,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -63,7 +68,16 @@ class WatchlistViewModel(
     private var appliedMutationVersion = 0L
 
     init {
+        viewModelScope.launch {
+            val sort = sortStore.read()
+            _state.update { it.copy(sort = sort) }
+        }
         load(initial = true)
+    }
+
+    fun setSort(sort: WatchlistSort) {
+        _state.update { it.copy(sort = sort) }
+        viewModelScope.launch { sortStore.set(sort) }
     }
 
     fun refresh() = load(initial = false, userInitiated = true)
@@ -198,6 +212,7 @@ class WatchlistViewModel(
                 WatchlistViewModel(
                     repository = container.traktRepository,
                     serviceOverrides = container.serviceOverrideStore,
+                    sortStore = container.watchlistSortStore,
                 )
             }
         }
