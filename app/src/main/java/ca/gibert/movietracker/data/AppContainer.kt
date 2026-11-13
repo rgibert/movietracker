@@ -72,6 +72,8 @@ class AppContainer(context: Context) {
 
     val serviceOverrideStore = ServiceOverrideStore(context = context, json = json)
 
+    val watchlistSortStore = WatchlistSortStore(context)
+
     val traktRepository = TraktRepository(
         api = traktApi,
         tmdbApi = tmdbApi,
