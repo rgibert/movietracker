@@ -15,21 +15,53 @@ data class ToWatchItem(
         get() = entry.movie
 }
 
-/** A Coming Up row: one upcoming release date of a watchlist movie. */
+/**
+ * A Coming Up row: a watchlist movie with every upcoming release date it has,
+ * so its theatrical, digital and disc releases share one row.
+ */
 data class ComingUpItem(
     val entry: WatchlistMovie,
-    val event: ReleaseEvent,
+    /** Upcoming releases, soonest first. Never empty. */
+    val events: List<ReleaseEvent>,
 ) {
+    init {
+        require(events.isNotEmpty()) { "A Coming Up item needs at least one release" }
+    }
+
     val movie: Movie
         get() = entry.movie
+
+    /** The movie's next release. */
+    val next: ReleaseEvent
+        get() = events.first()
+
+    /** The days this movie has a release on. */
+    val dates: Set<LocalDate>
+        get() = events.mapTo(LinkedHashSet()) { it.date }
 }
 
 data class ComingUp(
-    /** Dated releases, soonest first. A movie can appear once per release kind. */
+    /** One item per movie, ordered by its next release. */
     val dated: List<ComingUpItem>,
     /** Watchlist movies Trakt has no release date for yet. */
     val undated: List<WatchlistMovie>,
-)
+) {
+    /**
+     * Movies grouped by each day they have a release on. A movie with digital
+     * and disc releases on different days is listed under both days.
+     */
+    fun byReleaseDate(): Map<LocalDate, List<ComingUpItem>> {
+        val days = sortedMapOf<LocalDate, MutableList<ComingUpItem>>()
+        dated.forEach { item ->
+            item.dates.forEach { date -> days.getOrPut(date) { ArrayList() } += item }
+        }
+        return days
+    }
+
+    /** Movies grouped under the day of their next release only. */
+    fun byNextRelease(): Map<LocalDate, List<ComingUpItem>> =
+        dated.groupBy { it.next.date }.toSortedMap()
+}
 
 /**
  * Splits out the watchlist movies that are available today, keeping the
@@ -77,14 +109,14 @@ fun buildComingUp(
             undated += entry
             return@forEach
         }
-        upcomingEvents(entry.movie, entry.releases, hasProviders, today).forEach { event ->
-            dated += ComingUpItem(entry, event)
-        }
+        val events = upcomingEvents(entry.movie, entry.releases, hasProviders, today)
+            .sortedWith(compareBy({ it.date }, { it.kind }))
+        if (events.isNotEmpty()) dated += ComingUpItem(entry, events)
     }
 
     return ComingUp(
         dated = dated.sortedWith(
-            compareBy<ComingUpItem>({ it.event.date }, { it.event.kind }, { it.movie.title.lowercase() }),
+            compareBy<ComingUpItem>({ it.next.date }, { it.next.kind }, { it.movie.title.lowercase() }),
         ),
         undated = undated.sortedBy { it.movie.title.lowercase() },
     )

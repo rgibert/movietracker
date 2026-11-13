@@ -63,18 +63,65 @@ class WatchlistListsTest {
     }
 
     @Test
-    fun `coming up lists each future release and the undated movies`() {
+    fun `coming up lists each movie once with all its releases`() {
         val comingUp = buildComingUp(items, overrides = emptyMap(), today = today)
+        // Same next day: theatrical sorts ahead of digital.
+        assertEquals(listOf(3, 2), comingUp.dated.map { it.movie.ids.trakt })
         assertEquals(
             listOf(
-                // Same day: theatrical sorts ahead of digital.
-                Triple(3, ReleaseKind.THEATRICAL, LocalDate.of(2026, 12, 20)),
-                Triple(2, ReleaseKind.DIGITAL, LocalDate.of(2026, 12, 20)),
-                Triple(3, ReleaseKind.DIGITAL, LocalDate.of(2027, 2, 1)),
+                ReleaseEvent(LocalDate.of(2026, 12, 20), ReleaseKind.THEATRICAL),
+                ReleaseEvent(LocalDate.of(2027, 2, 1), ReleaseKind.DIGITAL),
             ),
-            comingUp.dated.map { Triple(it.movie.ids.trakt, it.event.kind, it.event.date) },
+            comingUp.dated[0].events,
+        )
+        assertEquals(
+            listOf(ReleaseEvent(LocalDate.of(2026, 12, 20), ReleaseKind.DIGITAL)),
+            comingUp.dated[1].events,
         )
         assertEquals(listOf(4), comingUp.undated.map { it.movie.ids.trakt })
+    }
+
+    @Test
+    fun `digital and disc releases of one movie share a row`() {
+        val homeReleases = entry(
+            id = 5,
+            title = "Home Releases",
+            releases = listOf(
+                "theatrical" to "2026-10-30",
+                "digital" to "2026-12-01",
+                "physical" to "2027-01-12",
+            ),
+        )
+        val sameDay = entry(
+            id = 6,
+            title = "Same Day",
+            releases = listOf("digital" to "2026-12-01", "physical" to "2026-12-01"),
+        )
+        val comingUp = buildComingUp(listOf(homeReleases, sameDay), overrides = emptyMap(), today = today)
+
+        assertEquals(listOf(5, 6), comingUp.dated.map { it.movie.ids.trakt })
+        assertEquals(
+            listOf(ReleaseKind.DIGITAL, ReleaseKind.PHYSICAL),
+            comingUp.dated[0].events.map { it.kind },
+        )
+        assertEquals(
+            listOf(ReleaseKind.DIGITAL, ReleaseKind.PHYSICAL),
+            comingUp.dated[1].events.map { it.kind },
+        )
+
+        // The list shows each movie once, under its next release.
+        assertEquals(
+            mapOf(LocalDate.of(2026, 12, 1) to listOf(5, 6)),
+            comingUp.byNextRelease().mapValues { (_, movies) -> movies.map { it.movie.ids.trakt } },
+        )
+        // The calendar marks every day a movie has a release on.
+        assertEquals(
+            mapOf(
+                LocalDate.of(2026, 12, 1) to listOf(5, 6),
+                LocalDate.of(2027, 1, 12) to listOf(5),
+            ),
+            comingUp.byReleaseDate().mapValues { (_, movies) -> movies.map { it.movie.ids.trakt } },
+        )
     }
 
     @Test
